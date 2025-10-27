@@ -2,7 +2,7 @@
 
 ## Assumptions
 
-It is assumed that you know have set up docker on your system and can
+It is assumed that you know how to set up docker on your system and can
 run CUDA. You may need to adjust for the version of CUDA your graphics
 driver supports or remove the CUDA components entirely.
 
