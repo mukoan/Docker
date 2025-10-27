@@ -29,6 +29,8 @@ Start with `./rundocker.sh techdemo /path/to/workspace`.
 OpenCV will be built inside the container on the first run,
 taking approximately 30 minutes depending on the specications of your computer.
 
+If the CUDA version is modified then the torch version must be modified too.
+
 ### gsplat
 
 Start with `./rundocker.sh gsplat /path/to/workspace`.

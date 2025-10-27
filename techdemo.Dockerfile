@@ -93,3 +93,6 @@ WORKDIR /home/user
 RUN pip3 install matplotlib
 RUN pip3 install opencv-python==4.12.0.88
 RUN pip3 install opencv-contrib-python==4.12.0.88
+
+# Install PyTorch
+RUN pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu118
