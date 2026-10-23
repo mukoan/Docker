@@ -1,0 +1,155 @@
+diff --git a/include/System.h b/include/System.h
+index 872c86e..890b44e 100644
+--- a/include/System.h
++++ b/include/System.h
+@@ -177,6 +177,10 @@ public:
+     std::vector<MapPoint*> GetTrackedMapPoints();
+     std::vector<cv::KeyPoint> GetTrackedKeyPointsUn();
+ 
++    std::vector<MapPoint*> GetAllMapPoints();
++    void SaveCOLMAPFormat(const std::string &filename_images,
++                          const std::string &filename_points);
++
+     // For debugging
+     double GetTimeFromIMUInit();
+     bool isLost();
+diff --git a/src/System.cc b/src/System.cc
+index e5e3bf7..39eaa0a 100644
+--- a/src/System.cc
++++ b/src/System.cc
+@@ -1350,6 +1350,135 @@ vector<cv::KeyPoint> System::GetTrackedKeyPointsUn()
+     return mTrackedKeyPointsUn;
+ }
+ 
++vector<MapPoint*> System::GetAllMapPoints()
++{
++    return mpAtlas->GetCurrentMap()->GetAllMapPoints();
++}
++
++void System::SaveCOLMAPFormat(const string &filename_images,
++                              const string &filename_points)
++{
++    cout << endl << "Saving map and trajectories to COLMAP format..." << endl;
++
++    Map* pActiveMap = mpAtlas->GetCurrentMap();
++    if(!pActiveMap) return;
++
++    vector<KeyFrame*> vpKFs = pActiveMap->GetAllKeyFrames();
++    if(vpKFs.empty()) {
++        cout << "Error: No keyframes in map." << endl;
++        return;
++    }
++
++    KeyFrame* pRefKF = vpKFs[0];
++    GeometricCamera* pCam1 = pRefKF->mpCamera;  // Left Camera
++    GeometricCamera* pCam2 = pRefKF->mpCamera2; // Right Camera
++
++    // Map to keep track of KeyFrame pointer -> Left Image ID in COLMAP
++    std::map<KeyFrame*, int> kf_to_left_img_id;
++
++    // Extract Stereo Extrinsics (T_c2_c1: Left to Right Camera):
++    // T_c2_c1 maps points from Left Camera frame to Right Camera frame
++    Sophus::SE3f T_c2_c1;
++    if (pCam2) {
++        T_c2_c1 = pRefKF->GetRightPose() * pRefKF->GetPose().inverse();
++    }
++
++    // Save images
++
++    sort(vpKFs.begin(), vpKFs.end(), KeyFrame::lId);
++
++    ofstream fImages(filename_images.c_str());
++    fImages << "# Image list with two lines per image\n";
++    fImages << "# IMAGE_ID, QW, QX, QY, QZ, TX, TY, TZ, CAMERA_ID, NAME\n";
++
++    int image_id_counter = 1;
++
++    for(size_t i = 0; i < vpKFs.size(); i++)
++    {
++        KeyFrame* pKF = vpKFs[i];
++        if(!pKF || pKF->isBad()) continue;
++
++        kf_to_left_img_id[pKF] = image_id_counter;
++
++        // T_c1_w: World to Left Camera transformation
++        Sophus::SE3f T_c1_w = pKF->GetPose();
++
++        // Export Left Image (Camera ID = 1)
++        Eigen::Quaternionf q1 = T_c1_w.unit_quaternion();
++        Eigen::Vector3f t1 = T_c1_w.translation();
++
++        // Handle image filename
++        string img_name = pKF->mNameFile;
++	size_t last_slash = img_name.find_last_of("/\\");
++        if (last_slash != string::npos) {
++          img_name = img_name.substr(last_slash + 1);
++        }
++
++        string left_img_name = "left/" + img_name;
++
++        fImages << image_id_counter++ << " "
++                << q1.w() << " " << q1.x() << " " << q1.y() << " " << q1.z() << " "
++                << t1.x() << " " << t1.y() << " " << t1.z() << " "
++                << "1 " // Camera ID 1 (Left)
++                << left_img_name << "\n\n";
++
++        // Export Right Image (Camera ID = 2)
++        if(pCam2) {
++            string right_img_name = "right/" + img_name;
++
++            // Compute Right Camera World Pose: T_c2_w = T_c2_c1 * T_c1_w
++            Sophus::SE3f T_c2_w = T_c2_c1 * T_c1_w;
++
++            Eigen::Quaternionf q2 = T_c2_w.unit_quaternion();
++            Eigen::Vector3f t2 = T_c2_w.translation();
++
++            fImages << image_id_counter++ << " "
++                    << q2.w() << " " << q2.x() << " " << q2.y() << " " << q2.z() << " "
++                    << t2.x() << " " << t2.y() << " " << t2.z() << " "
++                    << "2 " // Camera ID 2 (Right)
++                    << right_img_name << "\n\n";
++        }
++    }
++    fImages.close();
++
++    // Save points
++
++    const vector<MapPoint*> vpMPs = pActiveMap->GetAllMapPoints();
++    ofstream fPoints(filename_points.c_str());
++    fPoints << "# 3D point list\n";
++
++    for(size_t i = 0; i < vpMPs.size(); i++)
++    {
++        MapPoint* pMP = vpMPs[i];
++        if(!pMP || pMP->isBad()) continue;
++
++        Eigen::Vector3f pos = pMP->GetWorldPos();
++
++        // Point ID, X, Y, Z, R, G, B, Error
++        fPoints << pMP->mnId << " "
++                << pos(0) << " " << pos(1) << " " << pos(2) << " "
++                << "255 255 255 1.0"; // Default color to white and error to 1.0
++
++        // Get keyframes observing this map point to form valid COLMAP tracks
++        map<KeyFrame*, tuple<int,int>> observations = pMP->GetObservations();
++        for(auto& obs : observations) {
++            KeyFrame* pKF = obs.first;
++
++            if(pKF && !pKF->isBad() && kf_to_left_img_id.count(pKF) > 0) {
++                // int image_id = (pKF->mnId * 2) + 1; // Left image ID mapping
++		int image_id = kf_to_left_img_id[pKF];
++                int feature_idx = get<0>(obs.second);
++                fPoints << " " << image_id << " " << feature_idx;
++          }
++        }
++        fPoints << "\n";
++    }
++    fPoints.close();
++
++
++    cout << "COLMAP files successfully saved!" << endl;
++}
++
+ double System::GetTimeFromIMUInit()
+ {
+     double aux = mpLocalMapper->GetCurrKFTime()-mpLocalMapper->mFirstTs;

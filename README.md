@@ -24,12 +24,19 @@ namespace `mukoan`, e.g. the techdemo image will be tagged `mukoan/techdemo`.
 
 ### techdemo
 
-Start with `./rundocker.sh techdemo /path/to/workspace`.
-
-If the CUDA version was modified then the torch version must be modified too.
+If the CUDA version is modified then the torch version must be modified too.
 
 ### gsplat
 
-Start with `./rundocker.sh gsplat /path/to/workspace`.
+gsplat will be installed via pip.
 
-The gsplat source will be in the home directory of the user.
+The gsplat source will be downloaded and stored in the home directory of the user.
+
+### orbslam3
+
+ORBSLAM3 and Pangolin (a dependency) will be downloaded into the home
+directory of the user and built.
+
+The ORBSLAM3 source is from the community version maintained by Jeremy Salwen;
+it includes bug fixes from PRs submitted to the original ORBSLAM3 repository.
+I have further patched it to support export to COLMAP.
